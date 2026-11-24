@@ -1,0 +1,781 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>3D 尋寶島</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #9fd8ff;
+    font-family: "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif; color: #17324d; }
+  canvas { display: block; touch-action: none; }
+  .面板 { background: rgba(255,255,255,.88); border-radius: 14px; box-shadow: 0 4px 18px rgba(0,40,80,.18); }
+  #資訊列 { position: fixed; top: 12px; left: 12px; right: 12px; display: flex; justify-content: space-between;
+    gap: 8px; pointer-events: none; }
+  #資訊列 .面板 { padding: 8px 14px; font-size: 18px; font-weight: 700; }
+  #提示 { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); padding: 8px 16px;
+    display: flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700; pointer-events: none; white-space: nowrap; }
+  #箭頭 { display: inline-block; font-size: 22px; color: #e08a00; transition: transform .1s linear; }
+  #操作說明 { position: fixed; bottom: 70px; left: 12px; padding: 6px 12px; font-size: 13px; opacity: .85; pointer-events: none; }
+  #訊息 { position: fixed; top: 30%; left: 50%; transform: translate(-50%,-50%) scale(.8); padding: 12px 24px;
+    font-size: 26px; font-weight: 800; color: #b86b00; opacity: 0; transition: all .3s; pointer-events: none; white-space: nowrap; }
+  #訊息.顯示 { opacity: 1; transform: translate(-50%,-50%) scale(1); }
+  .蓋板 { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(10,40,70,.35); padding: 16px; }
+  .蓋板[hidden] { display: none; }
+  .蓋板 .面板 { max-width: 440px; width: 100%; padding: 24px 26px; text-align: center; }
+  h1 { margin: 0 0 6px; font-size: 32px; }
+  h2 { margin: 0 0 12px; font-size: 26px; }
+  .小字 { font-size: 15px; line-height: 1.7; text-align: left; margin: 12px 0 18px; }
+  .小字 kbd { background: #eef4fa; border: 1px solid #c6d6e6; border-radius: 5px; padding: 0 6px; font-family: inherit; }
+  button { font: inherit; font-size: 18px; font-weight: 700; border: 0; border-radius: 12px; padding: 10px 22px;
+    margin: 4px; cursor: pointer; background: #ffb300; color: #3a2400; }
+  button.次要 { background: #dfe9f3; color: #17324d; }
+  button:active { transform: scale(.96); }
+  #題目 { font-size: 34px; font-weight: 800; margin: 8px 0 14px; }
+  #答案 { font: inherit; font-size: 28px; width: 140px; text-align: center; padding: 6px; border-radius: 10px;
+    border: 2px solid #9cb7d1; margin-bottom: 12px; }
+  #答題結果 { min-height: 24px; font-weight: 700; color: #c0392b; }
+  .搖 { animation: 搖 .35s; }
+  @keyframes 搖 { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+  #搖桿底 { position: fixed; width: 110px; height: 110px; border-radius: 50%; background: rgba(255,255,255,.35);
+    border: 2px solid rgba(255,255,255,.7); display: none; pointer-events: none; }
+  #搖桿頭 { position: absolute; left: 30px; top: 30px; width: 50px; height: 50px; border-radius: 50%; background: rgba(255,255,255,.9); }
+  #跳按鈕 { position: fixed; right: 20px; bottom: 80px; width: 76px; height: 76px; border-radius: 50%; padding: 0;
+    font-size: 18px; display: none; opacity: .9; }
+  @media (max-width: 520px) {
+    #資訊列 .面板 { padding: 6px 10px; font-size: 14px; white-space: nowrap; }
+    #資訊列 .標籤 { display: none; }
+  }
+  @media (pointer: coarse) { #跳按鈕 { display: block; } #操作說明 { display: none; } }
+</style>
+</head>
+<body>
+
+<div id="資訊列">
+  <div class="面板">💎 <span class="標籤">寶箱 </span><span id="分數">0</span> / <span id="總數">0</span></div>
+  <div class="面板">⏱ <span id="時間">00:00</span></div>
+  <div class="面板">🏝️ <span class="標籤">第 </span><span id="島號">0</span><span class="標籤"> 號島</span></div>
+</div>
+<div id="提示" class="面板"><span id="箭頭">⬆</span><span id="提示文字">出發去找寶箱吧！</span></div>
+<div id="操作說明" class="面板"><kbd>WASD</kbd>／方向鍵 移動 · 空白鍵 跳 · 拖曳滑鼠 轉視角 · 滾輪 縮放 · <kbd>V</kbd> 俯瞰全島</div>
+<div id="訊息" class="面板"></div>
+<div id="搖桿底"><div id="搖桿頭"></div></div>
+<button id="跳按鈕">跳</button>
+
+<div id="開始畫面" class="蓋板">
+  <div class="面板">
+    <h1>🏝️ 3D 尋寶島</h1>
+    <div>第 <b id="開始島號">0</b> 號島・藏著 <b id="開始寶箱數">0</b> 個寶箱</div>
+    <div class="小字">
+      跟著發光的光柱，把島上的寶箱全部找出來！<br>
+      🎮 <kbd>W A S D</kbd> 或方向鍵：移動<br>
+      🦘 空白鍵：跳<br>
+      🖱️ 拖曳畫面：轉動視角，滾輪：拉近拉遠<br>
+      🗺️ <kbd>V</kbd>：切換「跟著走」和「俯瞰全島」<br>
+      📱 手機：左半邊拖曳移動，右半邊拖曳轉視角
+    </div>
+    <button id="開始按鈕">開始尋寶！</button>
+    <button id="換島按鈕" class="次要">換一座島</button>
+  </div>
+</div>
+
+<div id="題目畫面" class="蓋板" hidden>
+  <div class="面板">
+    <h2>🔒 寶箱上了鎖！</h2>
+    <div>答對才能打開：</div>
+    <div id="題目"></div>
+    <input id="答案" type="number" inputmode="numeric" autocomplete="off"><br>
+    <div id="答題結果"></div>
+    <button id="確認按鈕">打開！</button>
+    <button id="等等按鈕" class="次要">等一下再來</button>
+  </div>
+</div>
+
+<div id="結束畫面" class="蓋板" hidden>
+  <div class="面板">
+    <h2 id="結束標題"></h2>
+    <div id="結束內容" class="小字" style="text-align:center"></div>
+    <button id="再玩按鈕">再玩一次</button>
+    <button id="新島按鈕" class="次要">換一座新島</button>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// =====================================================
+// 🏝️ 島嶼設定：改這裡的數字，就能做出你自己的島！
+//    改完存檔，再重新整理網頁就看得到。
+// =====================================================
+const 設定 = {
+  島的種子: 2026,        // 換一個數字，就會長出一座完全不一樣的島
+  島的大小: 70,          // 島的半徑（公尺），建議 40 ~ 120
+  山的數量: 3,           // 0 ~ 8
+  山的高度: 14,          // 5 ~ 30，夠高的山頂會有白雪
+  樹的數量: 120,         // 0 ~ 400
+  房子的數量: 6,         // 0 ~ 20
+  寶箱的數量: 8,         // 1 ~ 20
+  海的顏色: '#2f8fd8',
+  天空的顏色: '#9fd8ff',
+  角色速度: 12,          // 走多快
+  跳躍力量: 9,           // 跳多高
+  數學闖關: false,       // 改成 true：打開寶箱前要先答對數學題
+  數學難度: 1,           // 1 = 加減   2 = 九九乘法   3 = 混合
+  時間限制: 0,           // 0 = 不限時；改成 120 就是「2 分鐘挑戰」
+};
+
+// =====================================================
+// 下面是讓島「動起來」的程式。看得懂的地方都可以試著改改看！
+// =====================================================
+
+// ---------- 1. 隨機數：同一個種子，永遠長出同一座島 ----------
+const 網址參數 = new URLSearchParams(location.search);
+const 種子 = Number(網址參數.get('seed')) || 設定.島的種子;
+function 做隨機器(a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const 隨機 = 做隨機器(種子);
+const 介於 = (最小, 最大) => 最小 + (最大 - 最小) * 隨機();
+const R = 設定.島的大小;
+
+// 平滑的「雜訊」：讓地面有自然的起伏
+function 雜湊(i, j) {
+  let h = (i * 374761393 + j * 668265263 + 種子 * 1442695041) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967295;
+}
+function 雜訊(x, y) {
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = 雜湊(xi, yi), b = 雜湊(xi + 1, yi), c = 雜湊(xi, yi + 1), d = 雜湊(xi + 1, yi + 1);
+  return (a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v) * 2 - 1;
+}
+
+// ---------- 2. 場景、鏡頭、燈光 ----------
+const 場景 = new THREE.Scene();
+場景.background = new THREE.Color(設定.天空的顏色);
+場景.fog = new THREE.Fog(設定.天空的顏色, R * 1.6, R * 4.5);
+
+const 鏡頭 = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, R * 12);
+const 畫家 = new THREE.WebGLRenderer({ antialias: true });
+畫家.setPixelRatio(Math.min(devicePixelRatio, 2));
+畫家.setSize(innerWidth, innerHeight);
+畫家.shadowMap.enabled = true;
+畫家.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.prepend(畫家.domElement);
+
+場景.add(new THREE.HemisphereLight('#ffffff', '#5a7a4a', 1.4));
+const 太陽 = new THREE.DirectionalLight('#fff3d6', 2.2);
+太陽.position.set(R * 0.8, R * 1.3, R * 0.5);
+太陽.castShadow = true;
+太陽.shadow.mapSize.set(2048, 2048);
+Object.assign(太陽.shadow.camera, { left: -R * 1.2, right: R * 1.2, top: R * 1.2, bottom: -R * 1.2, near: 1, far: R * 4 });
+太陽.shadow.bias = -0.0005;
+場景.add(太陽);
+
+function 加陰影(物件) {
+  物件.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+}
+
+// ---------- 3. 山：先決定山在哪裡 ----------
+const 山們 = [];
+for (let i = 0; i < 設定.山的數量; i++) {
+  const 方向 = 介於(0, Math.PI * 2), 距離 = 介於(0, R * 0.5);
+  山們.push({ x: Math.cos(方向) * 距離, z: Math.sin(方向) * 距離,
+    高: 設定.山的高度 * 介於(0.7, 1.1), 寬: R * 介於(0.1, 0.18) });
+}
+
+// ---------- 4. 地形：任何一個位置 (x, z) 的地面有多高？ ----------
+//   0 = 海平面；大於 0 是陸地，小於 0 是海底
+function 地面高度(x, z) {
+  const r = Math.hypot(x, z) / R;                  // 離島中心多遠（0 = 中心，1 = 海岸）
+  let h = 3.2 * (1 - r * r);                        // 中間高、旁邊低的「大饅頭」
+  h += 雜訊(x * 0.045 + 100, z * 0.045) * 2.2;      // 大起伏，海岸線會彎彎曲曲
+  h += 雜訊(x * 0.13, z * 0.13 + 50) * 0.6;         // 小起伏
+  let 山的部分 = 0;
+  for (const 山 of 山們) {                          // 把每座山疊上去
+    const 距離平方 = (x - 山.x) ** 2 + (z - 山.z) ** 2;
+    山的部分 += 山.高 * Math.exp(-距離平方 / (2 * 山.寬 * 山.寬));
+  }
+  h += 山的部分 * (1 + 雜訊(x * 0.18, z * 0.18) * 0.18); // 山坡加一點凹凸，看起來更像真的山
+  if (h < 0) h *= 1.6;                              // 海底再挖深一點
+  return Math.max(h, -8);
+}
+function 坡度(x, z) {
+  return (Math.abs(地面高度(x + 1, z) - 地面高度(x - 1, z)) + Math.abs(地面高度(x, z + 1) - 地面高度(x, z - 1))) / 2;
+}
+
+const 沙灘色 = new THREE.Color('#f0dc96'), 海底色 = new THREE.Color('#b9a467'), 雪色 = new THREE.Color('#ffffff'),
+      岩石色 = new THREE.Color('#8d8173'), 草地色 = new THREE.Color('#62c053'), 深草色 = new THREE.Color('#3b8b37');
+function 地面顏色(h, x, z, 顏色) {
+  const 斜 = 坡度(x, z);
+  if (h < -0.2) 顏色.copy(海底色);
+  else if (h < 0.9) 顏色.copy(沙灘色);
+  else if (h > 最高點 * 0.82 && 最高點 > 12) 顏色.copy(雪色);   // 只有夠高的山頂才會下雪
+  else if (斜 > 2.2 || h > 最高點 * 0.55) 顏色.copy(岩石色);
+  else 顏色.copy(草地色).lerp(深草色, (雜訊(x * 0.08, z * 0.08) + 1) / 2);
+}
+
+const 地形形狀 = new THREE.PlaneGeometry(R * 3, R * 3, 180, 180);
+地形形狀.rotateX(-Math.PI / 2);
+let 最高點 = 0;
+{
+  const 點 = 地形形狀.attributes.position, 顏色們 = [], 顏色 = new THREE.Color();
+  for (let i = 0; i < 點.count; i++) {
+    const h = 地面高度(點.getX(i), 點.getZ(i));
+    點.setY(i, h);
+    最高點 = Math.max(最高點, h);
+  }
+  for (let i = 0; i < 點.count; i++) {
+    const x = 點.getX(i), z = 點.getZ(i), h = 點.getY(i);
+    地面顏色(h, x, z, 顏色);
+    顏色們.push(顏色.r, 顏色.g, 顏色.b);
+  }
+  地形形狀.setAttribute('color', new THREE.Float32BufferAttribute(顏色們, 3));
+  地形形狀.computeVertexNormals();
+}
+const 地形 = new THREE.Mesh(地形形狀, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }));
+地形.receiveShadow = true;
+場景.add(地形);
+// 更遠的海底：一大片平平的沙，讓海看起來沒有邊
+const 遠海底 = new THREE.Mesh(new THREE.PlaneGeometry(R * 12, R * 12), new THREE.MeshStandardMaterial({ color: 海底色, roughness: 1 }));
+遠海底.rotation.x = -Math.PI / 2;
+遠海底.position.y = -8.02;
+場景.add(遠海底);
+
+// ---------- 5. 海：會起伏的海浪 ----------
+const 海形狀 = new THREE.PlaneGeometry(R * 10, R * 10, 120, 120);
+海形狀.rotateX(-Math.PI / 2);
+const 海 = new THREE.Mesh(海形狀, new THREE.MeshStandardMaterial({
+  color: 設定.海的顏色, transparent: true, opacity: 0.82, roughness: 0.35, flatShading: true }));
+海.receiveShadow = true;
+場景.add(海);
+function 海浪動起來(秒) {
+  const 點 = 海形狀.attributes.position;
+  for (let i = 0; i < 點.count; i++) {
+    const x = 點.getX(i), z = 點.getZ(i);
+    點.setY(i, Math.sin(x * 0.15 + 秒) * 0.22 + Math.cos(z * 0.2 + 秒 * 1.3) * 0.18);
+  }
+  點.needsUpdate = true;
+  海形狀.computeVertexNormals();
+}
+
+// ---------- 6. 找空地：幫房子、寶箱、樹找一個適合的位置 ----------
+const 已放的東西 = [];   // 用來避免東西疊在一起
+const 障礙物 = [];       // 角色走不過去的東西
+function 找空地({ 最低 = 1, 最高 = 8, 最大坡度 = 1.2, 間距 = 3, 範圍 = R * 0.95, 嘗試 = 300 } = {}) {
+  for (let k = 0; k < 嘗試; k++) {
+    const 方向 = 介於(0, Math.PI * 2), 距離 = Math.sqrt(隨機()) * 範圍;
+    const x = Math.cos(方向) * 距離, z = Math.sin(方向) * 距離, h = 地面高度(x, z);
+    if (h < 最低 || h > 最高 || 坡度(x, z) > 最大坡度) continue;
+    if (已放的東西.some(o => Math.hypot(o.x - x, o.z - z) < o.半徑 + 間距)) continue;
+    return { x, z, h };
+  }
+  return null;   // 找不到就算了
+}
+
+const 材質 = {
+  樹幹: new THREE.MeshStandardMaterial({ color: '#7a5230', flatShading: true }),
+  松葉: new THREE.MeshStandardMaterial({ color: '#2f7d3a', flatShading: true }),
+  圓葉: new THREE.MeshStandardMaterial({ color: '#4fae3f', flatShading: true }),
+  屋頂: new THREE.MeshStandardMaterial({ color: '#c8462f', flatShading: true }),
+  地基: new THREE.MeshStandardMaterial({ color: '#9a9a9a', flatShading: true }),
+  門: new THREE.MeshStandardMaterial({ color: '#6b4226' }),
+  窗: new THREE.MeshStandardMaterial({ color: '#bfe6ff', emissive: '#335566' }),
+  木箱: new THREE.MeshStandardMaterial({ color: '#8a5a2b', flatShading: true }),
+  金: new THREE.MeshStandardMaterial({ color: '#ffc928', metalness: 0.6, roughness: 0.3, emissive: '#553300' }),
+};
+const 牆的顏色 = ['#fff4d6', '#ffd9c2', '#d9f0ff', '#e6ffd9', '#f6e0ff'];
+
+// ---------- 7. 角色的出生點（先佔位，讓它附近空曠一點） ----------
+const 出生點 = 找空地({ 最低: 1, 最高: 6, 最大坡度: 0.8, 範圍: R * 0.6 }) || { x: 0, z: 0, h: 地面高度(0, 0) };
+已放的東西.push({ x: 出生點.x, z: 出生點.z, 半徑: 4 });
+
+// ---------- 8. 蓋房子 ----------
+function 蓋一間房子(x, z, h) {
+  const 房子 = new THREE.Group();
+  const 寬 = 介於(3, 4.5), 深 = 介於(3, 4), 高 = 介於(2.2, 3);
+  const 地基 = new THREE.Mesh(new THREE.BoxGeometry(寬 + 0.4, 1.6, 深 + 0.4), 材質.地基);
+  地基.position.y = -0.7;
+  const 牆 = new THREE.Mesh(new THREE.BoxGeometry(寬, 高, 深),
+    new THREE.MeshStandardMaterial({ color: 牆的顏色[Math.floor(介於(0, 牆的顏色.length))], flatShading: true }));
+  牆.position.y = 高 / 2;
+  const 屋頂 = new THREE.Mesh(new THREE.ConeGeometry(Math.max(寬, 深) * 0.8, 1.8, 4), 材質.屋頂);
+  屋頂.position.y = 高 + 0.9;
+  屋頂.rotation.y = Math.PI / 4;
+  const 門 = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.4, 0.06), 材質.門);
+  門.position.set(0, 0.7, 深 / 2 + 0.02);
+  房子.add(地基, 牆, 屋頂, 門);
+  for (const 左右 of [-1, 1]) {
+    const 窗 = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.06), 材質.窗);
+    窗.position.set(左右 * 寬 * 0.3, 高 * 0.6, 深 / 2 + 0.02);
+    房子.add(窗);
+  }
+  房子.position.set(x, h, z);
+  房子.rotation.y = 介於(0, Math.PI * 2);
+  加陰影(房子);
+  場景.add(房子);
+  已放的東西.push({ x, z, 半徑: Math.max(寬, 深) * 0.7 });
+  障礙物.push({ x, z, 半徑: Math.max(寬, 深) * 0.62 });
+}
+for (let i = 0; i < 設定.房子的數量; i++) {
+  const 空地 = 找空地({ 最低: 1, 最高: 6, 最大坡度: 0.9, 間距: 5 });
+  if (空地) 蓋一間房子(空地.x, 空地.z, 空地.h);
+}
+
+// ---------- 9. 放寶箱 ----------
+const 寶箱們 = [];
+function 放一個寶箱(x, z, h) {
+  const 寶箱 = new THREE.Group();
+  const 箱身 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.7, 0.8), 材質.木箱);
+  箱身.position.y = 0.35;
+  const 金邊 = new THREE.Mesh(new THREE.BoxGeometry(1.26, 0.12, 0.86), 材質.金);
+  金邊.position.y = 0.6;
+  const 鎖 = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.26, 0.1), 材質.金);
+  鎖.position.set(0, 0.62, 0.44);
+  const 蓋子 = new THREE.Group();          // 蓋子的轉軸在後面上方
+  蓋子.position.set(0, 0.7, -0.4);
+  const 蓋板 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.3, 0.8), 材質.木箱);
+  蓋板.position.set(0, 0.15, 0.4);
+  蓋子.add(蓋板);
+  寶箱.add(箱身, 金邊, 鎖, 蓋子);
+  加陰影(寶箱);
+  const 光柱 = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 30, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: '#ffd84a', transparent: true, opacity: 0.22,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+  光柱.position.y = 15;
+  寶箱.add(光柱);
+  寶箱.position.set(x, h - 0.05, z);
+  寶箱.rotation.y = 介於(0, Math.PI * 2);
+  場景.add(寶箱);
+  已放的東西.push({ x, z, 半徑: 1.5 });
+  寶箱們.push({ 物件: 寶箱, 蓋子, 光柱, x, z, 已打開: false, 打開進度: 0, 冷卻中: false });
+}
+for (let i = 0; i < 設定.寶箱的數量; i++) {
+  const 空地 = 找空地({ 最低: 0.3, 最高: Math.max(5, 最高點 * 0.6), 最大坡度: 1.8, 間距: 9 })
+           || 找空地({ 最低: 0.3, 最高: Math.max(5, 最高點 * 0.6), 最大坡度: 1.8, 間距: 3 });
+  if (空地) 放一個寶箱(空地.x, 空地.z, 空地.h);
+}
+
+// ---------- 10. 種樹 ----------
+function 種一棵樹(x, z, h) {
+  const 樹 = new THREE.Group();
+  const 大小 = 介於(0.8, 1.4);
+  const 樹幹 = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * 大小, 0.22 * 大小, 1.2 * 大小, 6), 材質.樹幹);
+  樹幹.position.y = 0.6 * 大小;
+  樹.add(樹幹);
+  if (隨機() < 0.5) {             // 松樹：三層尖尖的葉子
+    for (let 層 = 0; 層 < 3; 層++) {
+      const 葉 = new THREE.Mesh(new THREE.ConeGeometry((1.1 - 層 * 0.28) * 大小, 1.3 * 大小, 7), 材質.松葉);
+      葉.position.y = (1.4 + 層 * 0.7) * 大小;
+      樹.add(葉);
+    }
+  } else {                         // 圓樹：一顆圓圓的葉子球
+    const 葉 = new THREE.Mesh(new THREE.IcosahedronGeometry(1.0 * 大小, 0), 材質.圓葉);
+    葉.position.y = 1.9 * 大小;
+    樹.add(葉);
+  }
+  樹.position.set(x, h - 0.1, z);
+  樹.rotation.y = 介於(0, Math.PI * 2);
+  加陰影(樹);
+  場景.add(樹);
+  已放的東西.push({ x, z, 半徑: 0.5 * 大小 });
+  障礙物.push({ x, z, 半徑: 0.4 * 大小 });
+}
+for (let i = 0; i < 設定.樹的數量; i++) {
+  const 空地 = 找空地({ 最低: 0.9, 最高: Math.max(5, 最高點 * 0.52), 最大坡度: 1.8, 間距: 1.2, 嘗試: 40 });
+  if (空地) 種一棵樹(空地.x, 空地.z, 空地.h);
+}
+
+// ---------- 11. 天上的雲 ----------
+const 雲們 = [];
+const 雲材質 = new THREE.MeshStandardMaterial({ color: '#ffffff', flatShading: true, transparent: true, opacity: 0.92 });
+for (let i = 0; i < 10; i++) {
+  const 雲 = new THREE.Group();
+  const 塊數 = Math.floor(介於(3, 6));
+  for (let j = 0; j < 塊數; j++) {
+    const 塊 = new THREE.Mesh(new THREE.BoxGeometry(介於(3, 6), 介於(1.5, 2.5), 介於(3, 5)), 雲材質);
+    塊.position.set(j * 2.4 - 塊數, 介於(-0.5, 0.5), 介於(-1, 1));
+    雲.add(塊);
+  }
+  雲.position.set(介於(-R * 1.5, R * 1.5), 介於(26, 36), 介於(-R * 1.5, R * 1.5));
+  場景.add(雲);
+  雲們.push(雲);
+}
+
+// ---------- 12. 探險家（你的角色） ----------
+const 探險家 = new THREE.Group();
+{
+  const 衣服 = new THREE.MeshStandardMaterial({ color: '#ff8a3d', flatShading: true });
+  const 皮膚 = new THREE.MeshStandardMaterial({ color: '#ffd7b0' });
+  const 黑 = new THREE.MeshStandardMaterial({ color: '#222' });
+  const 帽子色 = new THREE.MeshStandardMaterial({ color: '#c9a46a', flatShading: true });
+  const 身體 = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.6, 4, 10), 衣服);
+  身體.position.y = 0.8;
+  const 頭 = new THREE.Mesh(new THREE.SphereGeometry(0.38, 16, 12), 皮膚);
+  頭.position.y = 1.72;
+  const 帽緣 = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.06, 16), 帽子色);
+  帽緣.position.y = 2.0;
+  const 帽頂 = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.3, 16), 帽子色);
+  帽頂.position.y = 2.16;
+  const 背包 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.3), 材質.木箱);
+  背包.position.set(0, 0.95, -0.42);
+  探險家.add(身體, 頭, 帽緣, 帽頂, 背包);
+  for (const 左右 of [-1, 1]) {
+    const 眼睛 = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), 黑);
+    眼睛.position.set(左右 * 0.13, 1.78, 0.33);
+    探險家.add(眼睛);
+  }
+}
+加陰影(探險家);
+場景.add(探險家);
+
+const 玩家 = { x: 出生點.x, z: 出生點.z, y: 出生點.h, 上下速度: 0, 在地上: true, 面向: 0, 走路時間: 0 };
+const 鏡頭狀態 = {
+  左右角: Math.atan2(出生點.x, 出生點.z),   // 一開始面向島的中心
+  上下角: 0.6, 距離: R * 1.7, 目標距離: R * 1.7, 俯瞰: false,
+  看的點: new THREE.Vector3(0, 2, 0),
+};
+
+// ---------- 13. 鍵盤、滑鼠、觸控 ----------
+const 按著的鍵 = {};
+let 遊戲狀態 = '開始前';   // 開始前 → 遊戲中 → 答題中 → 結束
+addEventListener('keydown', e => {
+  if (遊戲狀態 === '答題中') return;
+  按著的鍵[e.code] = true;
+  if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+  if (e.code === 'KeyV' && 遊戲狀態 === '遊戲中') 切換俯瞰();
+});
+addEventListener('keyup', e => { 按著的鍵[e.code] = false; });
+addEventListener('blur', () => { for (const k in 按著的鍵) 按著的鍵[k] = false; });
+
+function 切換俯瞰() {
+  鏡頭狀態.俯瞰 = !鏡頭狀態.俯瞰;
+  鏡頭狀態.目標距離 = 鏡頭狀態.俯瞰 ? R * 1.6 : 11;
+  鏡頭狀態.上下角 = 鏡頭狀態.俯瞰 ? 0.95 : 0.45;
+}
+
+const 搖桿 = { 指頭: null, 起點x: 0, 起點y: 0, x: 0, y: 0 };
+let 轉視角的指頭 = null, 上次x = 0, 上次y = 0;
+const 搖桿底 = document.getElementById('搖桿底'), 搖桿頭 = document.getElementById('搖桿頭');
+const 畫布 = 畫家.domElement;
+畫布.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'touch' && e.clientX < innerWidth * 0.45 && 搖桿.指頭 === null) {
+    Object.assign(搖桿, { 指頭: e.pointerId, 起點x: e.clientX, 起點y: e.clientY, x: 0, y: 0 });
+    搖桿底.style.display = 'block';
+    搖桿底.style.left = (e.clientX - 55) + 'px';
+    搖桿底.style.top = (e.clientY - 55) + 'px';
+    搖桿頭.style.transform = '';
+  } else if (轉視角的指頭 === null) {
+    轉視角的指頭 = e.pointerId; 上次x = e.clientX; 上次y = e.clientY;
+  }
+});
+addEventListener('pointermove', e => {
+  if (e.pointerId === 搖桿.指頭) {
+    let dx = e.clientX - 搖桿.起點x, dy = e.clientY - 搖桿.起點y;
+    const 長 = Math.hypot(dx, dy);
+    if (長 > 45) { dx *= 45 / 長; dy *= 45 / 長; }
+    搖桿.x = dx / 45; 搖桿.y = dy / 45;
+    搖桿頭.style.transform = `translate(${dx}px, ${dy}px)`;
+  } else if (e.pointerId === 轉視角的指頭) {
+    鏡頭狀態.左右角 -= (e.clientX - 上次x) * 0.006;
+    鏡頭狀態.上下角 = Math.min(1.4, Math.max(0.05, 鏡頭狀態.上下角 + (e.clientY - 上次y) * 0.004));
+    上次x = e.clientX; 上次y = e.clientY;
+  }
+});
+function 放開(e) {
+  if (e.pointerId === 搖桿.指頭) { 搖桿.指頭 = null; 搖桿.x = 搖桿.y = 0; 搖桿底.style.display = 'none'; }
+  if (e.pointerId === 轉視角的指頭) 轉視角的指頭 = null;
+}
+addEventListener('pointerup', 放開);
+addEventListener('pointercancel', 放開);
+畫布.addEventListener('wheel', e => {
+  e.preventDefault();
+  鏡頭狀態.目標距離 = Math.min(R * 2.5, Math.max(4, 鏡頭狀態.目標距離 * (1 + e.deltaY * 0.001)));
+}, { passive: false });
+const 跳按鈕 = document.getElementById('跳按鈕');
+跳按鈕.addEventListener('pointerdown', e => { e.preventDefault(); 按著的鍵.Space = true; });
+跳按鈕.addEventListener('pointerup', () => { 按著的鍵.Space = false; });
+跳按鈕.addEventListener('pointerleave', () => { 按著的鍵.Space = false; });
+
+// ---------- 14. 音效（用程式「彈」出來的聲音） ----------
+let 音效 = null;
+function 彈音符(頻率們, 間隔 = 0.09) {
+  if (!音效) return;
+  const 現在 = 音效.currentTime;
+  頻率們.forEach((頻率, i) => {
+    const 開始 = 現在 + i * 間隔, 振盪器 = 音效.createOscillator(), 音量 = 音效.createGain();
+    振盪器.type = 'triangle';
+    振盪器.frequency.value = 頻率;
+    音量.gain.setValueAtTime(0.0001, 開始);
+    音量.gain.exponentialRampToValueAtTime(0.25, 開始 + 0.02);
+    音量.gain.exponentialRampToValueAtTime(0.0001, 開始 + 0.4);
+    振盪器.connect(音量).connect(音效.destination);
+    振盪器.start(開始); 振盪器.stop(開始 + 0.45);
+  });
+}
+
+// ---------- 15. 畫面上的文字 ----------
+const 元素 = id => document.getElementById(id);
+const 總寶箱 = 寶箱們.length;
+let 分數 = 0, 經過秒數 = 0;
+元素('總數').textContent = 總寶箱;
+元素('島號').textContent = 元素('開始島號').textContent = 種子;
+元素('開始寶箱數').textContent = 總寶箱;
+
+let 訊息計時 = null;
+function 顯示訊息(文字) {
+  const 框 = 元素('訊息');
+  框.textContent = 文字;
+  框.classList.add('顯示');
+  clearTimeout(訊息計時);
+  訊息計時 = setTimeout(() => 框.classList.remove('顯示'), 1600);
+}
+function 時間文字(秒) {
+  秒 = Math.max(0, Math.floor(秒));
+  return String(Math.floor(秒 / 60)).padStart(2, '0') + ':' + String(秒 % 60).padStart(2, '0');
+}
+const 換島 = () => { location.search = '?seed=' + Math.floor(Math.random() * 9000 + 1000); };
+元素('開始按鈕').onclick = () => {
+  try { 音效 = new (window.AudioContext || window.webkitAudioContext)(); } catch { 音效 = null; }
+  元素('開始畫面').hidden = true;
+  遊戲狀態 = '遊戲中';
+  鏡頭狀態.目標距離 = 11;
+  鏡頭狀態.上下角 = 0.45;
+  鏡頭狀態.左右角 = Math.atan2(出生點.x, 出生點.z);
+  彈音符([523, 659, 784]);
+};
+元素('換島按鈕').onclick = 換島;
+元素('新島按鈕').onclick = 換島;
+元素('再玩按鈕').onclick = () => location.reload();
+
+// ---------- 16. 數學闖關 ----------
+let 正在答的寶箱 = null, 正確答案 = 0;
+const 隨便 = (最小, 最大) => 最小 + Math.floor(Math.random() * (最大 - 最小 + 1));
+function 出題() {
+  const 題型 = 設定.數學難度 === 3 ? 隨便(0, 2) : 設定.數學難度 - 1;
+  if (題型 === 1) { const a = 隨便(2, 9), b = 隨便(2, 9); return [`${a} × ${b} = ?`, a * b]; }
+  if (題型 === 2) { const a = 隨便(2, 9), b = 隨便(2, 9), c = 隨便(1, 20); return [`${a} × ${b} + ${c} = ?`, a * b + c]; }
+  const a = 隨便(5, 30), b = 隨便(1, 20);
+  return Math.random() < 0.5 ? [`${a} + ${b} = ?`, a + b] : [`${Math.max(a, b)} − ${Math.min(a, b)} = ?`, Math.max(a, b) - Math.min(a, b)];
+}
+function 開始答題(寶箱) {
+  正在答的寶箱 = 寶箱;
+  const [題目, 答案] = 出題();
+  正確答案 = 答案;
+  元素('題目').textContent = 題目;
+  元素('答案').value = '';
+  元素('答題結果').textContent = '';
+  元素('題目畫面').hidden = false;
+  遊戲狀態 = '答題中';
+  for (const k in 按著的鍵) 按著的鍵[k] = false;
+  setTimeout(() => 元素('答案').focus(), 50);
+}
+function 結束答題() {
+  元素('題目畫面').hidden = true;
+  if (遊戲狀態 === '答題中') 遊戲狀態 = '遊戲中';
+  正在答的寶箱.冷卻中 = true;   // 走開一點再回來，才會再出題
+  正在答的寶箱 = null;
+}
+function 檢查答案() {
+  if (元素('答案').value.trim() === '') return;
+  if (Number(元素('答案').value) === 正確答案) {
+    const 寶箱 = 正在答的寶箱;
+    結束答題();
+    打開寶箱(寶箱);
+  } else {
+    元素('答題結果').textContent = '再想想看！';
+    const 面板 = 元素('題目畫面').firstElementChild;
+    面板.classList.remove('搖'); void 面板.offsetWidth; 面板.classList.add('搖');
+    彈音符([220, 196], 0.12);
+  }
+}
+元素('確認按鈕').onclick = 檢查答案;
+元素('答案').addEventListener('keydown', e => { if (e.key === 'Enter') 檢查答案(); });
+元素('等等按鈕').onclick = 結束答題;
+
+// ---------- 17. 打開寶箱、噴出金幣 ----------
+const 金幣們 = [];
+const 金幣形狀 = new THREE.CylinderGeometry(0.18, 0.18, 0.05, 12);
+function 打開寶箱(寶箱) {
+  寶箱.已打開 = true;
+  分數++;
+  元素('分數').textContent = 分數;
+  彈音符([784, 988, 1175, 1568]);
+  for (let i = 0; i < 14; i++) {
+    const 金幣 = new THREE.Mesh(金幣形狀, 材質.金);
+    金幣.position.set(寶箱.x, 寶箱.物件.position.y + 0.8, 寶箱.z);
+    場景.add(金幣);
+    const 方向 = Math.random() * Math.PI * 2;
+    金幣們.push({ 物件: 金幣, vx: Math.cos(方向) * 2.5, vy: 6 + Math.random() * 3, vz: Math.sin(方向) * 2.5, 壽命: 1.6 });
+  }
+  if (分數 >= 總寶箱) setTimeout(() => 遊戲結束(true), 900);
+  else 顯示訊息(`💎 找到寶箱！還剩 ${總寶箱 - 分數} 個`);
+}
+function 遊戲結束(贏了) {
+  if (遊戲狀態 === '結束') return;
+  遊戲狀態 = '結束';
+  元素('題目畫面').hidden = true;
+  元素('結束標題').textContent = 贏了 ? '🎉 全部找到了！' : '⏰ 時間到！';
+  元素('結束內容').innerHTML = 贏了
+    ? `你在 <b>${時間文字(經過秒數)}</b> 內找到了全部 <b>${總寶箱}</b> 個寶箱！`
+    : `你找到了 <b>${分數}</b> / ${總寶箱} 個寶箱，再挑戰一次吧！`;
+  元素('結束畫面').hidden = false;
+  if (贏了) 彈音符([523, 659, 784, 1047, 1319], 0.12);
+}
+
+// ---------- 18. 每一格畫面都要做的事 ----------
+const 時鐘 = new THREE.Clock();
+const 腳下 = 地面高度;
+function 更新玩家(dt) {
+  // 讀取「想往哪裡走」
+  let 前後 = 0, 左右 = 0;
+  if (按著的鍵.KeyW || 按著的鍵.ArrowUp) 前後 += 1;
+  if (按著的鍵.KeyS || 按著的鍵.ArrowDown) 前後 -= 1;
+  if (按著的鍵.KeyD || 按著的鍵.ArrowRight) 左右 += 1;
+  if (按著的鍵.KeyA || 按著的鍵.ArrowLeft) 左右 -= 1;
+  前後 -= 搖桿.y; 左右 += 搖桿.x;
+
+  // 「前面」= 鏡頭看過去的方向
+  const 前x = -Math.sin(鏡頭狀態.左右角), 前z = -Math.cos(鏡頭狀態.左右角);
+  const 右x = -前z, 右z = 前x;
+  let 移x = 前x * 前後 + 右x * 左右, 移z = 前z * 前後 + 右z * 左右;
+  const 長 = Math.hypot(移x, 移z);
+  if (長 > 0.05) {
+    if (長 > 1) { 移x /= 長; 移z /= 長; }
+    const 步 = 設定.角色速度 * dt;
+    const 下一步x = 玩家.x + 移x * 步, 下一步z = 玩家.z + 移z * 步;
+    // 太深的海不能走過去（一次試一個方向，才能沿著海岸滑過去）
+    if (腳下(下一步x, 玩家.z) > -0.8) 玩家.x = 下一步x;
+    if (腳下(玩家.x, 下一步z) > -0.8) 玩家.z = 下一步z;
+    玩家.面向 = Math.atan2(移x, 移z);
+    玩家.走路時間 += dt * 12;
+  }
+  // 撞到樹或房子就推回去
+  for (const o of 障礙物) {
+    const dx = 玩家.x - o.x, dz = 玩家.z - o.z, d = Math.hypot(dx, dz), 最近 = o.半徑 + 0.45;
+    if (d < 最近 && d > 0.001) { 玩家.x = o.x + dx / d * 最近; 玩家.z = o.z + dz / d * 最近; }
+  }
+  // 跳躍和重力
+  if (按著的鍵.Space && 玩家.在地上) { 玩家.上下速度 = 設定.跳躍力量; 玩家.在地上 = false; }
+  玩家.上下速度 -= 25 * dt;
+  玩家.y += 玩家.上下速度 * dt;
+  const 地面 = 腳下(玩家.x, 玩家.z);
+  if (玩家.y <= 地面) { 玩家.y = 地面; 玩家.上下速度 = 0; 玩家.在地上 = true; }
+
+  探險家.position.set(玩家.x, 玩家.y + (長 > 0.05 && 玩家.在地上 ? Math.abs(Math.sin(玩家.走路時間)) * 0.12 : 0), 玩家.z);
+  let 差 = 玩家.面向 - 探險家.rotation.y;
+  差 = Math.atan2(Math.sin(差), Math.cos(差));
+  探險家.rotation.y += 差 * Math.min(1, dt * 12);
+}
+
+function 更新鏡頭(dt) {
+  const 目標 = (遊戲狀態 === '開始前' || 鏡頭狀態.俯瞰)
+    ? new THREE.Vector3(0, 2, 0)
+    : new THREE.Vector3(玩家.x, 玩家.y + 1.4, 玩家.z);
+  if (遊戲狀態 === '開始前') 鏡頭狀態.左右角 += dt * 0.12;
+  鏡頭狀態.看的點.lerp(目標, 1 - Math.exp(-dt * (遊戲狀態 === '開始前' || 鏡頭狀態.俯瞰 ? 3 : 12)));
+  鏡頭狀態.距離 += (鏡頭狀態.目標距離 - 鏡頭狀態.距離) * (1 - Math.exp(-dt * 4));
+  const { 左右角, 上下角, 距離, 看的點 } = 鏡頭狀態;
+  鏡頭.position.set(
+    看的點.x + Math.sin(左右角) * Math.cos(上下角) * 距離,
+    看的點.y + Math.sin(上下角) * 距離,
+    看的點.z + Math.cos(左右角) * Math.cos(上下角) * 距離);
+  鏡頭.position.y = Math.max(鏡頭.position.y, 腳下(鏡頭.position.x, 鏡頭.position.z) + 1.2, 0.8);
+  鏡頭.lookAt(看的點);
+}
+
+function 更新寶箱(dt, 秒) {
+  let 最近 = null, 最近距離 = Infinity;
+  for (const 寶箱 of 寶箱們) {
+    const 距離 = Math.hypot(玩家.x - 寶箱.x, 玩家.z - 寶箱.z);
+    if (寶箱.已打開) {
+      寶箱.打開進度 = Math.min(1, 寶箱.打開進度 + dt * 2.5);
+      寶箱.蓋子.rotation.x = -1.9 * (1 - (1 - 寶箱.打開進度) ** 3);
+      寶箱.光柱.material.opacity *= 1 - Math.min(1, dt * 3);
+      寶箱.光柱.visible = 寶箱.光柱.material.opacity > 0.01;
+      continue;
+    }
+    寶箱.光柱.material.opacity = 0.18 + Math.sin(秒 * 3 + 寶箱.x) * 0.06;
+    if (距離 > 3) 寶箱.冷卻中 = false;
+    if (遊戲狀態 === '遊戲中' && 距離 < 1.8 && !寶箱.冷卻中 && Math.abs(玩家.y - 寶箱.物件.position.y) < 2) {
+      if (設定.數學闖關) 開始答題(寶箱); else 打開寶箱(寶箱);
+    }
+    if (距離 < 最近距離) { 最近距離 = 距離; 最近 = 寶箱; }
+  }
+  // 提示：最近的寶箱在哪個方向？
+  if (最近) {
+    const 前x = -Math.sin(鏡頭狀態.左右角), 前z = -Math.cos(鏡頭狀態.左右角);
+    const dx = 最近.x - 玩家.x, dz = 最近.z - 玩家.z;
+    const 角度 = Math.atan2(dx * -前z + dz * 前x, dx * 前x + dz * 前z);
+    元素('箭頭').style.transform = `rotate(${角度}rad)`;
+    元素('提示文字').textContent = `最近的寶箱：${Math.round(最近距離)} 公尺`;
+  } else {
+    元素('箭頭').style.transform = '';
+    元素('提示文字').textContent = '寶箱全部找到了！';
+  }
+}
+
+function 更新金幣(dt) {
+  for (let i = 金幣們.length - 1; i >= 0; i--) {
+    const 金幣 = 金幣們[i];
+    金幣.vy -= 18 * dt;
+    金幣.物件.position.x += 金幣.vx * dt;
+    金幣.物件.position.y += 金幣.vy * dt;
+    金幣.物件.position.z += 金幣.vz * dt;
+    金幣.物件.rotation.x += dt * 10;
+    金幣.壽命 -= dt;
+    if (金幣.壽命 <= 0) { 場景.remove(金幣.物件); 金幣們.splice(i, 1); }
+  }
+}
+
+function 每一格() {
+  const dt = Math.min(時鐘.getDelta(), 0.05);
+  const 秒 = 時鐘.elapsedTime;
+  if (遊戲狀態 === '遊戲中') {
+    更新玩家(dt);
+    經過秒數 += dt;
+    if (設定.時間限制 > 0) {
+      元素('時間').textContent = 時間文字(設定.時間限制 - 經過秒數);
+      if (經過秒數 >= 設定.時間限制) 遊戲結束(false);
+    } else {
+      元素('時間').textContent = 時間文字(經過秒數);
+    }
+  } else if (遊戲狀態 === '開始前') {
+    更新玩家(0);
+  }
+  更新鏡頭(dt);
+  更新寶箱(dt, 秒);
+  更新金幣(dt);
+  海浪動起來(秒);
+  for (const 雲 of 雲們) {
+    雲.position.x += dt * 1.5;
+    if (雲.position.x > R * 1.6) 雲.position.x = -R * 1.6;
+  }
+  畫家.render(場景, 鏡頭);
+  requestAnimationFrame(每一格);
+}
+if (設定.時間限制 > 0) 元素('時間').textContent = 時間文字(設定.時間限制);
+addEventListener('resize', () => {
+  鏡頭.aspect = innerWidth / innerHeight;
+  鏡頭.updateProjectionMatrix();
+  畫家.setSize(innerWidth, innerHeight);
+});
+每一格();
+
+// 給老師／測試用：在瀏覽器主控台可以看到這座島的資料
+window.尋寶島 = { 設定, 種子, 玩家, 寶箱們, 地面高度, 打開寶箱 };
+</script>
+</body>
+</html>
